@@ -188,6 +188,7 @@ exitInitBoard: j printBoard
 placeInSquare: 
 
 lw $t0, wid		#load width
+addi $t0, $t0, 2	#adjust for buffer
 lw $t1, cy		#load cy
 mul $t1, $t0, $t1	#width * cy is stored in $t1
 lw $t0, cx		#overrides wid
@@ -227,14 +228,14 @@ pickEntrance: sub $sp, $sp, 4
 sw $ra, 0($sp)
 lw $a0, wid
 jal rand
-addi $v0, $v0, 2
-sw $v0, cx
-li $a0, 1
-move $v0, $zero
 addi $v0, $v0, 1
-sw $v0, cy
+sw $v0, cx
+move $v0, $zero
+addi $v0, $v0, 1	#start at next level
+sw $v0, cy		#on y
+li $a0, 1			#loads value to input
 jal placeInSquare
-lw $ra, 0($sp)
+lw $ra, 0($sp)	#pops stack
 add $sp, $sp, 4
 jr $ra
 
@@ -271,7 +272,7 @@ sw $v0, cx
 li $a0, 1
 move $v0, $zero
 lw $v0, hgt
-addi $v0, $v0, 3					#I dont understand why it requires 3 to be at the bottom
+addi $v0, $v0, 1					#I dont understand why it requires 2 to be at the bottom
 sw $v0, cy
 
 jal placeInSquare
@@ -328,6 +329,8 @@ printBoard:
 #j debuggingDisplay
 jal pickEntrance
 
+li $v0, 5
+syscall
 jal pickExit
 
 lw $t2, wid
