@@ -188,10 +188,10 @@ placeInSquare:
 lw $t0, wid		#load width
 lw $t1, cy		#load cy
 mul $t1, $t0, $t1	#width * cy is stored in $t1
+lw $t0, cx		#overrides wid
+add $t1, $t1, $t0	#t1 is now (width 
 la $t0, board		#board overrides $t0 (wid)
 add $t0, $t0, $t1	#shifts it over width * cy
-lw $t1, cx		#cx overrides $t1 (width * cy)
-add $t0, $t0, $t1	#shifts it over cx
 sb $a0, ($t0)		#stores $a0 (passed value) into point of array
 jr $ra
 
@@ -267,8 +267,6 @@ jal rand							#grab random
 addi $v0, $v0, 1
 sw $v0, cx
 li $a0, 1
-li $v0, 5
-syscall
 move $v0, $zero
 lw $v0, hgt
 addi $v0, $v0, 3					#I dont understand why it requires 3 to be at the bottom
@@ -327,8 +325,7 @@ wallGap:	.asciiz " "
 printBoard: 
 #j debuggingDisplay
 jal pickEntrance
-##li $v0, 5
-##syscall
+
 jal pickExit
 
 lw $t2, wid
@@ -338,15 +335,18 @@ addi $t3, $t3, 1
 la $t8, board
 
 move $t5, $zero
-printBoardLoop: bge $t5, $t3, debuggingDisplay
+
+printBoardLoop:
 	move $t9, $zero
 	addi $t8, $t8, 1 	#pass out of bounds of map
+	#li $v0, 5		#used to see what the process is behind the scenes in mips (equivalent of debugging = print("HERE!") in mips lol)
+	#syscall
 	printBoardNestedLoopNS: bge $t9, $t2, exitPrintBoardNestedNS
 		la $a0, pillar			#print pillar
-		li $v0, 4
+		li $v0, 4		 	
 		syscall
 		jal nSGather
-		beq $t7, 1, setGap
+		beq $t6, 1, setGap
 		beq $t7, 3, setGap
 		la $a0, topWall
 		printDoor:li $v0, 4				#prints door/wall or space
@@ -355,17 +355,20 @@ printBoardLoop: bge $t5, $t3, debuggingDisplay
 		addi $t9, $t9, 1
 		j printBoardNestedLoopNS			#its the ROUNDDDABOUT
 	exitPrintBoardNestedNS: 	
-	move $t9, $zero	#set loop counter to 0
+	move $t9, $zero						#set loop counter to 0
 	la $a0, pillar						#printing closing char
 	li $v0, 4
 	syscall
 	addi $a0, $zero, 0xA					#print new line (found on internet, very cool)
 	li $v0, 11
 	syscall
-	sub $t8, $t8, $t3					#setting array back to where it was
+	sub $t8, $t8, $t2					#setting array back to where it was
 	addi $t0,  $t5, 1
 	beq $t0, $t3, debuggingDisplay
 	printBoardNestedLoopEW: bge $t9, $t2, exitPrintBoardNestedEW	#for east west walls
+		jal eWGather
+		beq $t6, 4, setWallGap
+		beq $t7, 2, setWallGap
 		la $a0, sideWall
 		printWall: li $v0, 4				#prints door/wall or space
 		syscall
@@ -415,8 +418,8 @@ syscall
 
 
 
-debuggingDisplay: jal pickEntrance
-jal pickExit
+debuggingDisplay: #jal pickEntrance
+#jal pickExit
 lw $t2, wid
 lw $t3, hgt
 addi $t2, $t2, 2
@@ -438,6 +441,47 @@ debugLoop: beq $t5, $t3, exit
 	li $v0, 11
 	syscall
 	j debugLoop
+
+########################################################################
+# Function Name: takeMove
+########################################################################
+# Functional Description:
+#    This adds one more cell to the maze.  It starts with the cell cx, cy.
+#    It then counts how many of the neighboring cells are currently
+#    empty.
+#    *    If there is only one, then it adds that square to the maze,
+#     having that square point to this one, and moving cx, cy to that
+#     square.
+#    *    If there are two or three, it randomly picks one, then does the
+#     same as the only one case.
+#    *    If there are none, the routine clears the numLeft value, signifying
+#     that we are done with the maze (TBD change this in part 3).
+#
+########################################################################
+# Register Usage in the Function:
+#    $a0, $v0 -- used for syscall linkage, and calculations
+#    We save $ra on stack, as well as $s0-$s5
+#    $t0, $t1 -- general use
+#    $s0 -- pointer to the square at cx, cy
+#    $s1 -- pointer to a neighboring cell
+#    $s2 -- how many neighbors are empty?
+#    $s3-$s5 -- possible neighbors to move to
+#
+########################################################################
+# Algorithmic Description in Pseudocode:
+#    1. Save $ra and $s registers on the stack
+#    2. Set $s0 to point to the current cell
+#    3. Count the number of neighbors that have a 0 value.  The count
+#     will be in $s2, and $s3-$s5 will be the possible moves to
+#     neighbors:  1 = move north, 2 = move south, 3 = move east,
+#     4 = move west.
+#     3a. If we have one choice, move to that square and have it point back
+#     to this square.
+#     3b. If we have two or three choices, pick one at random.
+#     3c. If we have no choices, stop the generator
+#    4. Restore the $ra and $s register values
+#
+########################################################################
 
 
 
