@@ -1,0 +1,503 @@
+########################################################################
+# Function Name: getSize
+########################################################################
+# Functional Description:
+#    Ask the user for the size of the maze.  If they ask for a dimension
+#    less than 5, we will just use 5.  If they ask for a dimension greater
+#    than 40, we will just use 40.  This routine will store the size into
+#    the globals wid and hgt.
+#
+########################################################################
+# Register Usage in the Function:
+#    $t0 -- Pointer into the board
+#    $t1, $t2 -- wid - 1 and hgt - 1, the values for the right edge and
+#     bottom row.
+#    $t3, $t4 -- loop counters
+#    $t6 -- the value to store
+#
+########################################################################
+# Algorithmic Description in Pseudocode:
+#    1. Prompt for the two values
+#    2. Fetch each of the two values
+#    3. Limit the values to the range 5 <= n <= 40
+#    4. Store into wid and hgt
+#
+########################################################################
+		.data
+wid:		.word 10
+hgt: 		.word 10
+cx:		.word 0
+cy:		.word 0
+numLeft:	.word 0
+board:		.space 1600	
+greetings:	.asciiz		"Welcome to the maze... OF DOOM\n"
+getWidth: 	.asciiz 	"\nHow wide is the maze... OF DOOM\n"
+getHeight:	.asciiz		"\nAnd how long... OF DOOM\n"
+valueTooBig:	.asciiz		"\nTOO MUCH DOOM (number between 5 - 38)\n"
+valueTooSmall:	.asciiz		"\nNOT ENOUGH DOOM (number between 5 - 38)\n"
+gatherSeed:	.asciiz		"\nAnd what will the seed be today\n"
+		.align 0
+		.text
+		.globl main
+main:
+
+li	$v0, 4
+la	$a0, greetings
+syscall
+getTheWidth:	move	$t0, $zero
+la	$a0, getWidth		#getWidth is used in order to ensure within range
+syscall
+li	$v0, 5			#prompt user for input
+syscall
+jal	tooSmallCheck
+jal	tooBigCheck
+beq	$t0, -1, getTheWidth
+sw	$v0, wid		#set wid to gathered
+
+getTheHeight:	move	$t0, $zero
+li	$v0, 4
+la	$a0, getHeight		#getWidth is used in order to ensure within range
+syscall
+li	$v0, 5			#prompt user for input
+syscall
+jal	tooSmallCheck
+jal	tooBigCheck
+beq	$t0, -1, getTheHeight
+
+sw	$v0, hgt		#set hgt to the gathered height height
+
+li	$v0, 4
+la	$a0, gatherSeed		#get Seed for the maze
+syscall
+li	$v0, 5			#prompt user for input
+syscall
+
+jal seedrand			#sets seed for the maze
+
+la $t1, wid
+la $t2, hgt
+mul $t1, $t1, $t2
+sw $t1, numLeft
+
+j	buildingTheBoard
+
+tooSmallCheck:			
+bge	$v0, 5, smallPassed	#checks input and adjust temp value to read invalid input if not passed this branch
+li	$v0, 4
+la	$a0, valueTooSmall
+syscall
+li	$t0, -1
+smallPassed:	jr	$ra	
+tooBigCheck:		
+ble	$v0, 38, bigPassed	#checks input and adjust temp value to read invalid input if not passed this branch
+li	$v0, 4
+la	$a0, valueTooBig
+syscall
+li	$t0, -1
+bigPassed:	jr	$ra
+
+########################################################################
+# Function Name: initBoard
+########################################################################
+# Functional Description:
+#    Initialize the board array.  All of the cells in the middle of the
+#    board will be set to 0 (empty), and all the cells on the edges of
+#    the board will be set to 5 (border).
+#
+########################################################################
+# Register Usage in the Function:
+#    $t0 -- Pointer into the board
+#    $t1, $t2 -- wid - 1 and hgt - 1, the values for the right edge and
+#     bottom row.
+#    $t3, $t4 -- loop counters
+#    $t6 -- the value to store
+#
+########################################################################
+# Algorithmic Description in Pseudocode:
+#    1. Set $t0 to point to the board
+#    2. Build nested loops for each row and column
+#     2a. If we are in the first or last iteration of either loop,
+#     place a 5 in the board.
+#     2b. Otherwise, place a 0 in the board
+#     2c. Increment $t0 after each placement, to go to the next cell.
+#
+########################################################################
+.data
+isZero:		.byte 0		#change later :)
+isFive:		.byte 5
+
+p:		.word 0		#pointer to copy of array in heap
+.text
+
+
+buildingTheBoard: 
+lw $t1, wid
+lw $t2, hgt
+
+la $t0, board
+addi $t1, $t1, +1
+addi $t2, $t2, +1
+
+move $t4, $zero
+
+initBoardLoop:	
+	bgt $t4, $t2, exitInitBoard	#height
+	move	$t3, $zero		#Prepping nested loop counter	
+	nestedBoardLoop:	
+
+		bgt $t3, $t1, exitNestedLoop	#width, if $t3 > $t1 then leave nested loop
+		beqz $t4, storeFive
+		beqz $t3, storeFive
+		beq $t3, $t1, storeFive
+		beq $t4, $t2, storeFive
+		lb $t6, isZero
+		j storeValue	
+		storeFive: lb $t6, isFive
+		storeValue: sb $t6, ($t0)
+		addi $t0, $t0, 1
+		addi $t3, $t3, 1
+		j nestedBoardLoop
+	exitNestedLoop:		addi $t4, $t4, 1	#increase loop counter 
+	j initBoardLoop
+	
+	
+exitInitBoard: j printBoard
+
+
+########################################################################
+# Function Name: placeInSquare
+########################################################################
+# Functional Description:
+#    A value is passed in $a0, the number to be placed in one square of
+#    the board.  The global variables cx and cy indicate which square.
+#
+########################################################################
+# Register Usage in the Function:
+#    $a0 -- The value to be placed
+#    $t0, $t1 -- general computations
+#
+########################################################################
+# Algorithmic Description in Pseudocode:
+#    1. compute the effective address, board + cy * wid + cx
+#    2. Store the byte in $a0 at this address.
+#
+########################################################################
+
+placeInSquare: 
+
+lw $t0, wid		#load width
+lw $t1, cy		#load cy
+mul $t1, $t0, $t1	#width * cy is stored in $t1
+la $t0, board		#board overrides $t0 (wid)
+add $t0, $t0, $t1	#shifts it over width * cy
+lw $t1, cx		#cx overrides $t1 (width * cy)
+add $t0, $t0, $t1	#shifts it over cx
+sb $a0, ($t0)		#stores $a0 (passed value) into point of array
+jr $ra
+
+
+########################################################################
+# Function Name: pickEntrance
+########################################################################
+# Functional Description:
+#    This picks the entrance for the maze.  It goes to one of the
+#    cells on the north edge of the map (inside the border), then changes
+#   it's value from 0 (empty) to 1 (came from north).
+#    This routine will exit with cx, cy set to the cell, so we are ready
+#    to find a path here through the maze.
+#
+########################################################################
+# Register Usage in the Function:
+#    $a0, $v0 -- used for syscall linkage, and calculations
+#    We save $ra on stack, because we call the rand and placeInSquare
+#   functions
+#
+########################################################################
+# Algorithmic Description in Pseudocode:
+#    1. Save $ra on the stack
+#    2. Pick a random column, from 1 to wid - 1
+#    3. Place '1' in the chosen border cell
+#    4. Restore the $ra value
+#
+########################################################################
+
+pickEntrance: sub $sp, $sp, 4
+sw $ra, 0($sp)
+lw $a0, wid
+jal rand
+addi $v0, $v0, 1
+sw $v0, cx
+li $a0, 1
+move $v0, $zero
+addi $v0, $v0, 1
+sw $v0, cy
+jal placeInSquare
+lw $ra, 0($sp)
+add $sp, $sp, 4
+jr $ra
+
+########################################################################
+# Function Name: pickExit
+########################################################################
+# Functional Description:
+#    This picks the exit for the maze.  It goes to one of the border
+#    cells on the south edge of the map, then changes it's value from
+#    5 (border) to 1 (came from north).
+#
+########################################################################
+# Register Usage in the Function:
+#    $a0, $v0 -- used for syscall linkage, and calculations
+#    We save $ra on stack, because we call the rand and placeInSquare
+#   functions
+#
+########################################################################
+# Algorithmic Description in Pseudocode:
+#    1. Save $ra on the stack
+#    2. Pick a random column, from 1 to wid - 1
+#    3. Place '1' in the chosen border cell
+#    4. Restore the $ra value
+#
+########################################################################
+
+pickExit: sub $sp, $sp, 4
+
+sw $ra, 0($sp)
+lw $a0, wid						#storing $ra in stack to return later				
+jal rand							#grab random
+addi $v0, $v0, 1
+sw $v0, cx
+li $a0, 1
+li $v0, 5
+syscall
+move $v0, $zero
+lw $v0, hgt
+addi $v0, $v0, 3					#I dont understand why it requires 3 to be at the bottom
+sw $v0, cy
+
+jal placeInSquare
+lw $ra, 0($sp)
+add $sp, $sp, 4
+jr $ra
+
+
+
+########################################################################
+# Function Name: printBoard
+########################################################################
+# Functional Description:
+#    This prints the final maze to the console
+#
+########################################################################
+# Register Usage in the Function:
+#    $a0, $v0 -- used for syscall linkage
+#    $t8 -- pointer to first cell in current row
+#    $t9 -- loop counter for rows
+#    $t7, $t6 -- pointers to neighboring cells as we scan rows
+#    $t5 -- loop counter for columns
+#    $t0, $t1 -- general computations
+#
+########################################################################
+# Algorithmic Description in Pseudocode:
+#    1. Loop for each row on the board.  $t8 will point to the first cell
+#     in the row, and $t9 is the loop counter.
+#     1a.    Loop for each column, printing the north wall/door.  $t7 will
+#     point to the north cell, $t6 to the south cell, and $t5 is
+#     loop counter.
+#     1a1. If board[$t7] came from south or board[$t6] came from
+#     north, print open door.  Otherwise print wall.
+#     1b. At end of row, print closing char and newline.
+#     1c. If we are in the last row of the board, don't print the 'cells'
+#     at the bottom edge, they are the border of the map.  Skip
+#     steps 1d and 1e.
+#     1d.    Loop for each column, printing the west wall/door.  $t7 will
+#     point to the west cell, $t6 to the east cell, and $t5 is
+#     loop counter.
+#     1d1. If board[$t7] came from east or board[$t6] came from
+#     west, print open door.  Otherwise print wall.
+#     1e. At end of row, print closing char and newline.
+#
+########################################################################
+		.data
+topWall:	.asciiz "--"
+pillar:	.asciiz "+"
+sideWall:	.asciiz "|"
+gap:		.asciiz "  "
+wallGap:	.asciiz " "
+		.text
+printBoard: 
+#j debuggingDisplay
+jal pickEntrance
+##li $v0, 5
+##syscall
+jal pickExit
+
+lw $t2, wid
+lw $t3, hgt
+addi $t3, $t3, 1
+
+la $t8, board
+
+move $t5, $zero
+printBoardLoop: bge $t5, $t3, debuggingDisplay
+	move $t9, $zero
+	addi $t8, $t8, 1 	#pass out of bounds of map
+	printBoardNestedLoopNS: bge $t9, $t2, exitPrintBoardNestedNS
+		la $a0, pillar			#print pillar
+		li $v0, 4
+		syscall
+		jal nSGather
+		beq $t7, 1, setGap
+		beq $t7, 3, setGap
+		la $a0, topWall
+		printDoor:li $v0, 4				#prints door/wall or space
+		syscall
+		addi $t8, $t8, 1
+		addi $t9, $t9, 1
+		j printBoardNestedLoopNS			#its the ROUNDDDABOUT
+	exitPrintBoardNestedNS: 	
+	move $t9, $zero	#set loop counter to 0
+	la $a0, pillar						#printing closing char
+	li $v0, 4
+	syscall
+	addi $a0, $zero, 0xA					#print new line (found on internet, very cool)
+	li $v0, 11
+	syscall
+	sub $t8, $t8, $t3					#setting array back to where it was
+	addi $t0,  $t5, 1
+	beq $t0, $t3, debuggingDisplay
+	printBoardNestedLoopEW: bge $t9, $t2, exitPrintBoardNestedEW	#for east west walls
+		la $a0, sideWall
+		printWall: li $v0, 4				#prints door/wall or space
+		syscall
+		la $a0, gap
+		syscall
+		addi $t8, $t8, 1
+		addi $t9, $t9, 1		
+	j printBoardNestedLoopEW
+	exitPrintBoardNestedEW:addi $t5, $t5, 1
+	la $a0, sideWall
+	syscall
+	addi $a0, $zero, 0xA
+	li $v0, 11
+	syscall
+	addi $t8, $t8, 1					#prep for wall skip
+	j printBoardLoop
+	
+nSGather: 
+la $t6, ($t8)
+add $t6, $t6, $t2
+addi $t6, $t6, 2
+lb $t6, ($t6)
+la $t7, ($t8)
+sub $t7, $t7, $t2
+subi $t7, $t7, 2
+lb $t7, ($t7)
+jr $ra
+
+eWGather:
+la $t7, ($t8)
+addi $t7, $t7, 1
+lb $t7, ($t7)
+la $t6, ($t8)
+subi $t6, $t6, 1
+lb $t6, ($t6)
+jr $ra	
+
+setGap: la $a0, gap
+j printDoor
+
+setWallGap: la $a0, wallGap
+j printWall
+
+exit:
+li	$v0, 10
+syscall
+
+
+
+debuggingDisplay: jal pickEntrance
+jal pickExit
+lw $t2, wid
+lw $t3, hgt
+addi $t2, $t2, 2
+addi $t3, $t3, 2
+la $t8, board
+move $t5, $zero
+
+debugLoop: beq $t5, $t3, exit
+	move $t9, $zero
+	debugNestedLoop: beq $t9, $t2, exitDebugNestLoop
+		lb $a0, ($t8)
+		li $v0, 1
+		syscall
+		addi $t9, $t9, 1
+		addi, $t8, $t8, 1
+		j debugNestedLoop
+	exitDebugNestLoop: addi, $t5, $t5, 1
+	addi $a0, $zero, 0xA
+	li $v0, 11
+	syscall
+	j debugLoop
+
+
+
+
+########################################################################
+# Function Name: int rand()
+########################################################################
+# Functional Description:
+#    This routine generates a pseudorandom number using the xorsum
+#    algorithm.  It depends on a non-zero value being in the 'seed'
+#    location, which can be set by a prior call to seedrand.  For this
+#    version, pass in a number N in $a0.  The return value will be a
+#    number between 0 and N-1.
+#
+########################################################################
+# Register Usage in the Function:
+#    $t0 -- a temporary register used in the calculations
+#    $v0 -- the register used to hold the return value
+#    $a0 -- the input value, N
+#
+########################################################################
+# Algorithmic Description in Pseudocode:
+#    1. Fetch the current seed value into $v0
+#    2. Perform these calculations:
+#     $v0 ^= $v0 << 13
+#     $v0 ^= $v0 >> 17
+#     $v0 ^= $v0 << 5
+#    3. Save the resulting value back into the seed.
+#    4. Mask the number, then get the modulus (remainder) dividing by $a0.
+#
+########################################################################
+     .data
+seed:    .word 31415     # An initial value, in case seedrand wasn't called
+     .text
+rand:
+    lw     $v0, seed     # Fetch the seed value
+    sll     $t0, $v0, 13    # Compute $v0 ^= $v0 << 13
+    xor     $v0, $v0, $t0
+    srl     $t0, $v0, 17    # Compute $v0 ^= $v0 >> 17
+    xor     $v0, $v0, $t0
+    sll     $t0, $v0, 5     # Compute $v0 ^= $v0 << 5
+    xor     $v0, $v0, $t0
+    sw     $v0, seed     # Save result as next seed
+    andi    $v0, $v0, 0xFFFF    # Mask the number (so we know its positive)
+    div     $v0, $a0     # divide by N.  The reminder will be
+    mfhi    $v0     # in the special register, HI.  Move to $v0.
+    jr     $ra     # Return the number in $v0
+
+########################################################################
+# Function Name: seedrand(int)
+########################################################################
+# Functional Description:
+#    This routine sets the seed for the random number generator.  The
+#    seed is the number passed into the routine.
+#
+########################################################################
+# Register Usage in the Function:
+#    $a0 -- the seed value being passed to the routine
+#
+########################################################################
+seedrand:
+    sw $a0, seed
+    jr $ra
